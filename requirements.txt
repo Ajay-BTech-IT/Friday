@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+psycopg[binary,pool]
+langchain-google-genai
+langchain-core
+langgraph
+apscheduler
+python-dotenv
+cryptography
+google-api-python-client
+google-auth-oauthlib
+httpx
+tzdata
+winotify; sys_platform == "win32"
