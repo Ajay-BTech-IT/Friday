@@ -27,7 +27,7 @@ OFFLINE = ("I can't reach Gemini right now. It looks like your internet connecti
            "Nothing was lost; try again in a few seconds.")
 
 
-PERSONA_TOOLS = {"switch_persona", "create_persona", "update_persona"}
+PERSONA_TOOLS = {"switch_persona", "create_persona", "update_persona", "set_language"}
 
 
 def _start_event(persona: dict) -> dict:

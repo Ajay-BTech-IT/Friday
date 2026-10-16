@@ -5,7 +5,7 @@ import re
 
 from database import db
 
-_cache: dict = {"active": None, "all": None}
+_cache: dict = {"active": None, "all": None, "lang": None}
 
 _BASE_RULES = (
     "You are a personal companion and mentor for one person. Be concise (2-4 short sentences unless asked for "
@@ -43,13 +43,49 @@ async def seed_personas() -> None:
     _cache.update(active=None, all=None)
 
 
-def _resolve(row: dict | None) -> dict | None:
-    """A persona without its own voice speaks with the default voice for its gender."""
-    if row is not None and not row.get("tts_voice_id"):
-        from voice.tts import default_voice
+def _resolve(row: dict | None, lang: dict | None = None) -> dict | None:
+    """Voice a persona speaks with: in a non-English language, a voice for that language (the persona's own voice if it
+    already fits); otherwise the persona's own voice, or the default for its gender."""
+    if row is None:
+        return None
+    from voice.tts import default_voice
 
-        row = {**row, "tts_voice_id": default_voice(row.get("gender"))}
-    return row
+    male = (row.get("gender") or "").lower().startswith("m") or not row.get("gender")
+    voice = row.get("tts_voice_id")
+    if lang and lang.get("locale") and lang.get("voices") and not (voice or "").lower().startswith(lang["locale"].lower()):
+        voices = lang["voices"]
+        voice = voices.get("male" if male else "female") or voices.get("male") or voices.get("female") or voice
+    return {**row, "tts_voice_id": voice or default_voice(row.get("gender"))}
+
+
+async def get_language() -> dict | None:
+    """The language the user asked for ({'name','locale','script','style','voices'}), or None for plain English."""
+    if _cache["lang"] is None:
+        from database import profile as profile_db
+
+        extra = (await profile_db.get_profile()).get("extra") or {}
+        lang = extra.get("language")
+        _cache["lang"] = lang if lang and lang.get("name") and lang["name"].lower() != "english" else {}
+    return _cache["lang"] or None
+
+
+async def set_language(name: str, locale: str | None, script: str, style: str | None, voices: dict | None) -> dict:
+    from database import profile as profile_db
+
+    rec = {"name": name.strip(), "locale": locale, "script": script, "style": style, "voices": voices or {}}
+    await profile_db.update_profile({"extra": {"language": rec}})
+    invalidate()
+    return rec
+
+
+async def language_line() -> str:
+    """One instruction for any text the assistant writes (reminders, briefings); empty for English."""
+    lang = await get_language()
+    if not lang:
+        return ""
+    where = (f"{lang['name']} words in their native script and English words in Latin letters"
+             if lang.get("script") == "native" else "all in Latin letters")
+    return f"LANGUAGE: write it in {lang['name']}" + (f" ({lang['style']})" if lang.get("style") else "") + f", {where}."
 
 
 def base_rules() -> str:
@@ -58,7 +94,8 @@ def base_rules() -> str:
 
 async def list_personas() -> list[dict]:
     if _cache["all"] is None:
-        _cache["all"] = [_resolve(r) for r in await db.fetch("SELECT * FROM personas WHERE active ORDER BY is_default DESC, name")]
+        lang = await get_language()
+        _cache["all"] = [_resolve(r, lang) for r in await db.fetch("SELECT * FROM personas WHERE active ORDER BY is_default DESC, name")]
     return _cache["all"]
 
 
@@ -70,7 +107,7 @@ async def get_active() -> dict:
         )
         if row is None:
             row = await db.fetchrow("SELECT * FROM personas WHERE is_default LIMIT 1")
-        _cache["active"] = _resolve(row)
+        _cache["active"] = _resolve(row, await get_language())
     return _cache["active"]
 
 
@@ -96,7 +133,7 @@ async def switch(name_or_alias: str) -> dict | None:
 
 
 def invalidate() -> None:
-    _cache.update(active=None, all=None)
+    _cache.update(active=None, all=None, lang=None)
 
 
 def _aliases(name: str, extra: list[str] | None = None) -> list[str]:

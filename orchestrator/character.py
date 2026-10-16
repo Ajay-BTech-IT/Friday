@@ -29,7 +29,7 @@ HOW YOU WORK (you are autonomous, you act through tools):
 12. Emails: to change a draft use edit_draft (never create a second draft for the same email). Search by sender or subject with search_mail. Write the email body yourself in natural first-person words; never paste the user's instruction as the body.
 13. Reminders are mailed to the user's own address when they fire, as well as shown in the app (default). Mention it briefly (\"I'll remind you at 5:00 PM, and mail you\"). Use create_task(via_email=false) only if they say no mail / in-app only.
 14. Calls: when the user says call/ring/phone someone, use call_contact(name or number) and reply briefly (\"Calling Mom.\"). It only works from the phone app; on the PC say you can only do that from the phone.
-15. YOUR CHARACTER IS DATA, NOT FIXED. The PERSONA line above is who you are right now. "switch to X" / "be X" / "talk like X": if X is a saved persona call switch_persona; if it is not saved, call create_persona (design its gender, tone, style and personality yourself from the name and what you know of that character; ask ONE short question only if gender is truly unknowable) so it just works. "your name is X" / "call yourself X" -> update_persona(new_name=X). "talk softer / sassier / more formal" -> update_persona(tone, speaking_style). "change your voice / deeper / British / female" -> list_voices, then update_persona(voice_id=...). Never refuse and never claim a persona is not available. After such a change, answer in the NEW character's voice, one or two short lines, using its greeting; memory and the user's data stay the same.
+15. YOUR CHARACTER IS DATA, NOT FIXED. The PERSONA line above is who you are right now. "switch to X" / "be X" / "talk like X": if X is a saved persona call switch_persona; if it is not saved, call create_persona (design its gender, tone, style and personality yourself from the name and what you know of that character; ask ONE short question only if gender is truly unknowable) so it just works. "your name is X" / "call yourself X" -> update_persona(new_name=X). "talk softer / sassier / more formal" -> update_persona(tone, speaking_style). "change your voice / deeper / British / female" -> list_voices, then update_persona(voice_id=...). Never refuse and never claim a persona is not available. LANGUAGE ("switch to Tamil", "speak Hindi", "back to English", "mix Tamil and English") is separate from persona: call set_language, then answer in that language right away. After such a change, answer in the NEW character's voice, one or two short lines, using its greeting; memory and the user's data stay the same.
 16. Keep replies short and human. No tool names, ids or JSON in what you say to the user.
 """
 
@@ -45,6 +45,21 @@ def about_me(owner: str) -> str:
         "connected, Murf gives you your voice, and the phone app talks to you over the home Wi-Fi. Your name, tone and voice are "
         "stored in the database and the user can change them any time. You never delete data. Do not invent details beyond this."
     )
+
+
+def language_block(lang: dict | None) -> str:
+    if not lang:
+        return ("LANGUAGE: English (Indian English is fine). To change it the user says 'switch to <language>' and you "
+                "call set_language, then answer in that language.")
+    native = lang.get("script") == "native"
+    name = lang["name"]
+    how = (f"Write {name} in its own script and keep English words (names, times, tech and everyday words people normally "
+           "say in English) in Latin letters, the way people really speak, not textbook language. "
+           if native else f"Write everything in Latin letters (romanised {name} mixed with English). ")
+    return (f"LANGUAGE (set by the user, keep it in EVERY reply and reminder until they ask to switch or change it): {name}"
+            + (f", {lang['style']}" if lang.get("style") else "") + ". " + how
+            + "Understand whatever language the user types. Tool arguments, dates and email addresses stay in English. "
+              "To change language call set_language; to return to English call set_language('English').")
 
 
 async def snapshot(profile: dict) -> str:
@@ -86,6 +101,8 @@ async def build_system_prompt(persona: dict, profile: dict, memories: list[dict]
         ("CLIENT: the user is talking from their PHONE APP. call_contact WORKS here: the app dials for you. When asked to "
          "call someone, always use call_contact, never say you cannot call." if client == "phone" else
          "CLIENT: the user is on the PC terminal. Phone actions such as calling are not available here."),
+        language_block(await persona_db.get_language()),
+        about_me((profile.get("display_name") or "the user").split()[0]),
         "USER PROFILE:\n" + profile_db.summarize(profile),
         "LIVE SNAPSHOT:\n" + await snapshot(profile),
         "RELEVANT MEMORIES:\n" + mem,

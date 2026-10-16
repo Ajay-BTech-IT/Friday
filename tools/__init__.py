@@ -6,7 +6,7 @@ from tools.gmail import (compose_draft, draft_reply, edit_draft, list_drafts, li
                          request_send_draft, search_mail, sync_mail_now)
 from tools.meals import correct_meal, food_nutrition, get_day_summary, log_meal, set_nutrition_goal
 from tools.memory import recall, remember, retire_memory
-from tools.persona import create_persona, list_personas, list_voices, switch_persona, update_persona
+from tools.persona import create_persona, list_personas, list_voices, set_language, switch_persona, update_persona
 from tools.profile import get_profile, update_profile
 from tools.reminder import (complete_task, create_routine, create_task, list_routines, list_tasks,
                             snooze_task, update_routine, update_task, upcoming_reminders)
@@ -16,7 +16,7 @@ TOOLS = [
     # profile + persona
     get_profile, update_profile,
     # persona: switch / create / rename / retune / voice (all stored in the personas table)
-    switch_persona, create_persona, update_persona, list_personas, list_voices,
+    switch_persona, create_persona, update_persona, list_personas, list_voices, set_language,
     # tasks, routines, reminders
     create_task, list_tasks, complete_task, snooze_task, update_task,
     create_routine, list_routines, update_routine, upcoming_reminders,

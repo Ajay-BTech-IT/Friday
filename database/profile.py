@@ -110,5 +110,7 @@ def summarize(p: dict) -> str:
     ]
     extra = p.get("extra") or {}
     if extra:
-        lines.append("Other: " + "; ".join(f"{k}={v}" for k, v in extra.items()))
+        other = {k: v for k, v in extra.items() if k != "language"}
+        if other:
+            lines.append("Other: " + "; ".join(f"{k}={v}" for k, v in other.items()))
     return "\n".join(lines)

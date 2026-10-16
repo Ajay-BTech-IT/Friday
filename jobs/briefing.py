@@ -128,6 +128,7 @@ async def compose(data: dict) -> str:
         "preview tomorrow. No markdown, no lists, no emojis, do not invent anything not in the data.\n\n"
         f"DATA:\n{json.dumps(jsonable(data), ensure_ascii=False)}\n"
         + ("MEMORIES:\n" + "\n".join(m["content"] for m in mem) if mem else "")
+        + "\n" + await persona_db.language_line()
     )
     res = await chat_model(0.5).ainvoke(prompt)
     return text_of(res.content).strip()

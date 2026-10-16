@@ -31,8 +31,14 @@ async def transcribe(data: bytes, mime: str = "audio/aac") -> str:
         raise STTError(f"Unsupported audio type {mime}")
     if len(data) < 800:
         raise STTError("Audio too short")
+    from database import persona as persona_db
+
+    lang = await persona_db.get_language()
+    prompt = PROMPT + (f" The speaker currently speaks {lang['name']} mixed with English: write {lang['name']} words in "
+                       f"{'their native script' if lang.get('script') == 'native' else 'Latin letters'} and English words in Latin letters."
+                       if lang else "")
     msg = HumanMessage(content=[
-        {"type": "text", "text": PROMPT},
+        {"type": "text", "text": prompt},
         {"type": "media", "mime_type": mime, "data": base64.b64encode(data).decode()},
     ])
     try:
