@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Jarvis</title>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --bg:#05080d; --panel:#0b1119; --line:#1a2634; --text:#dbe7f3; --muted:#7f93a8;
+  --h:190; --glow:.45;
+  --c:hsl(var(--h) 90% 66%);
+  --font:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(340px,.85fr)}
+@media (max-width:860px){.app{grid-template-columns:1fr;grid-template-rows:52% 48%}}
+.app.focus{grid-template-columns:1fr;grid-template-rows:1fr}
+
+/* ---------- stage ---------- */
+.stage{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;
+  background:radial-gradient(ellipse at 50% 42%,#0a1420 0%,var(--bg) 70%)}
+.grid{position:absolute;inset:0;opacity:.22;pointer-events:none;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:44px 44px;mask-image:radial-gradient(circle at 50% 42%,#000 0,transparent 70%)}
+.aura{position:absolute;left:50%;top:42%;width:min(80vh,94%);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;
+  background:radial-gradient(circle,hsl(var(--h) 90% 55% / calc(var(--glow)*.5)) 0%,hsl(var(--h) 90% 45% / calc(var(--glow)*.16)) 45%,transparent 70%);
+  pointer-events:none}
+#face{position:relative;width:min(56vh,86%);max-height:62%;aspect-ratio:1;z-index:1}
+#face svg{width:100%;height:100%;overflow:visible}
+#avatar3d{position:absolute;inset:0;width:100%;height:100%;display:none;z-index:1;pointer-events:none}
+.has3d #avatar3d{display:block}
+.has3d #head{display:none}            /* the drawn face gives way to the 3D head; the rings and the glow stay */
+.ringL{position:absolute;inset:0;will-change:transform;pointer-events:none}
+.ringL svg{width:100%;height:100%;overflow:visible}
+.ringL circle{fill:none;stroke:var(--c)}
+.a1{animation:spin 46s linear infinite;opacity:.5}.a1 circle{stroke-width:1.2;stroke-dasharray:3 9}
+.a2{animation:spin 30s linear infinite reverse;opacity:.3}.a2 circle{stroke-width:2;stroke-dasharray:90 40 12 40}
+.a3{animation:spin 70s linear infinite;opacity:.45}.a3 circle{stroke-width:1;stroke-dasharray:1 7}
+@keyframes spin{to{transform:rotate(360deg)}}
+.stage[data-state=thinking] .a1{animation-duration:9s}.stage[data-state=thinking] .a2{animation-duration:6s}
+.stage[data-state=listening] .a3{opacity:.9}.stage[data-state=listening] .a3 circle{stroke-width:2.4}
+@media (prefers-reduced-motion:reduce){.ringL{animation:none}}
+.halo{stroke:var(--c);stroke-opacity:.11;stroke-width:7;stroke-linejoin:round;paint-order:stroke}   /* a glow with no filter: a wide faint outline under the shape */
+
+.caption{position:relative;z-index:1;margin-top:6px;text-align:center;min-height:42px}
+.who{font-size:13px;letter-spacing:.42em;text-transform:uppercase;color:var(--c)}
+.mood{margin-top:5px;font-size:13px;color:var(--muted);min-height:18px;font-style:italic}
+.status{display:inline-block;width:7px;height:7px;border-radius:50%;background:#35c46a;margin-right:8px;vertical-align:middle}
+.status.off{background:#c44}
+
+.controls{position:relative;z-index:2;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;margin-top:10px;padding:0 12px}
+.cb{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--line);
+  background:#0c1520;color:var(--text);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
+.cb:hover:not(:disabled){border-color:var(--c);background:#122033}
+.cb:disabled{opacity:.4;cursor:default}
+.cb[aria-pressed=true]{border-color:var(--c);color:var(--c)}
+.cb[aria-pressed=false] .on,.cb[aria-pressed=true] .off{display:none}
+.cb.rec{background:#5a1620;border-color:#c33;color:#fff;animation:bl 1s steps(2) infinite}
+.vol{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+.vol input{width:84px;accent-color:hsl(var(--h) 90% 60%)}
+
+#subtitle{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:4;width:min(760px,90%);text-align:center;font-size:19px;line-height:1.5;
+  color:#fff;text-shadow:0 2px 12px #000,0 0 3px #000;display:none;pointer-events:none}
+.focus #subtitle{display:block}
+
+#emoji{position:absolute;right:12%;top:6%;font-size:clamp(34px,6vh,64px);opacity:0;z-index:3;pointer-events:none;
+  font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif}
+#emoji.pop{animation:pop 3.4s ease-out forwards}
+@keyframes pop{0%{opacity:0;transform:translateY(12px) scale(.4)}12%{opacity:1;transform:translateY(0) scale(1.15)}
+  22%{transform:scale(1)}80%{opacity:1;transform:translateY(-8px)}100%{opacity:0;transform:translateY(-22px)}}
+
+#player{position:absolute;right:14px;bottom:14px;width:min(420px,60%);z-index:5;display:none;
+  background:#000;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 10px 40px #000a}
+#player.on{display:block}
+#player .bar{display:flex;align-items:center;justify-content:space-between;padding:4px 10px;background:var(--panel);font-size:12px;color:var(--muted)}
+#player .bar b{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:500;color:var(--text);max-width:80%}
+#player iframe{display:block;width:100%;aspect-ratio:16/9;border:0}
+.x{background:none;border:0;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 6px}.x:hover{color:#fff}
+
+/* ---------- conversation ---------- */
+.convo{display:flex;flex-direction:column;min-height:0;background:var(--panel);border-left:1px solid var(--line)}
+@media (max-width:860px){.convo{border-left:0;border-top:1px solid var(--line)}}
+.top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)}
+.top h1{margin:0;font-size:14px;font-weight:600;letter-spacing:.08em}
+#log{flex:1;min-height:0;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth}
+.m{max-width:88%;padding:10px 13px;border-radius:14px;line-height:1.5;font-size:15px;white-space:pre-wrap;word-wrap:break-word}
+.m.me{align-self:flex-end;background:#16314a;border-bottom-right-radius:4px}
+.m.bot{align-self:flex-start;background:#111b27;border:1px solid var(--line);border-bottom-left-radius:4px}
+.m.sys{align-self:center;font-size:12px;color:var(--muted);background:none;padding:2px}
+.m.err{color:#ff8a8a}
+.cursor::after{content:"";display:inline-block;width:7px;height:15px;margin-left:3px;background:var(--c);vertical-align:-2px;animation:bl 1s steps(2) infinite}
+@keyframes bl{50%{opacity:.25}}
+.compose{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line);padding-bottom:max(12px,env(safe-area-inset-bottom))}
+#in{flex:1;min-width:0;background:#0d1620;border:1px solid var(--line);color:var(--text);border-radius:12px;padding:11px 14px;font:inherit;font-size:15px;outline:none}
+#in:focus{border-color:var(--c)}
+.send{width:44px;border:0;border-radius:12px;background:var(--c);color:#031018;font-size:18px;cursor:pointer;font-weight:700}
+.send:disabled{opacity:.4;cursor:default}
+.focus .convo{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,#05080dcc 40%);border:0;z-index:6}
+.focus #log,.focus .top{display:none}
+.focus .compose{max-width:680px;margin:0 auto;width:100%;border:0}
+
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(420px,92vw)}
+dialog::backdrop{background:#000a}
+dialog h2{margin:0 0 12px;font-size:16px}dialog label{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px}
+dialog input[type=password]{width:100%;background:#0d1620;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;font:inherit}
+dialog .row{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+dialog button{border-radius:8px;border:1px solid var(--line);background:#0d1620;color:var(--text);padding:8px 14px;cursor:pointer;font:inherit}
+dialog button.p{background:var(--c);color:#031018;border:0;font-weight:600}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <section class="stage" id="stage" data-state="idle">
+    <div class="grid"></div><div class="aura" id="aura"></div>
+    <div id="face">
+      <div class="ringL a1"><svg viewBox="0 0 400 400"><circle cx="200" cy="200" r="190"/></svg></div>
+      <div class="ringL a2"><svg viewBox="0 0 400 400"><circle cx="200" cy="200" r="178"/></svg></div>
+      <div class="ringL a3"><svg viewBox="0 0 400 400"><circle cx="200" cy="200" r="198"/></svg></div>
+      <canvas id="avatar3d" aria-hidden="true"></canvas>
+      <span id="emoji"></span>
+      <svg viewBox="0 0 400 400" aria-label="Face">
+        <defs>
+          <radialGradient id="plate" cx="50%" cy="38%" r="68%"><stop offset="0" stop-color="#14263a"/><stop offset=".7" stop-color="#0a1522"/><stop offset="1" stop-color="#050b13"/></radialGradient>
+          <radialGradient id="cheek" cx="50%" cy="50%" r="50%"><stop offset="0" style="stop-color:hsl(var(--h) 85% 60%);stop-opacity:.34"/><stop offset="1" style="stop-color:hsl(var(--h) 85% 60%);stop-opacity:0"/></radialGradient>
+          <radialGradient id="sclera" cx="50%" cy="45%" r="62%"><stop offset="0" stop-color="#e4f1f6"/><stop offset=".75" stop-color="#a9c4d0"/><stop offset="1" stop-color="#6f8d9c"/></radialGradient>
+          <radialGradient id="iris" cx="50%" cy="50%" r="50%"><stop offset="0" style="stop-color:hsl(var(--h) 95% 78%)"/><stop offset=".45" style="stop-color:hsl(var(--h) 85% 52%)"/><stop offset=".85" style="stop-color:hsl(var(--h) 80% 26%)"/><stop offset="1" style="stop-color:hsl(var(--h) 70% 14%)"/></radialGradient>
+          <linearGradient id="lidShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".62"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient>
+          <linearGradient id="lip" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:hsl(var(--h) 85% 62%)"/><stop offset="1" style="stop-color:hsl(var(--h) 85% 40%)"/></linearGradient>
+          <clipPath id="clipL"><path id="clipLp"/></clipPath>
+          <clipPath id="clipR"><path id="clipRp"/></clipPath>
+          <clipPath id="clipM"><path id="clipMp"/></clipPath>
+        </defs>
+        <g id="head">
+          <g id="plateG">
+            <ellipse cx="200" cy="200" rx="150" ry="162" fill="url(#plate)" stroke="var(--c)" stroke-opacity=".5" stroke-width="1.5"/>
+            <path d="M82 226 Q96 330 200 360 Q304 330 318 226" fill="none" stroke="var(--c)" stroke-opacity=".16" stroke-width="2"/>
+            <ellipse id="cheekL" cx="112" cy="238" rx="40" ry="30" fill="url(#cheek)" opacity="0"/>
+            <ellipse id="cheekR" cx="288" cy="238" rx="40" ry="30" fill="url(#cheek)" opacity="0"/>
+          </g>
+          <g id="feat">
+            <path id="nose" fill="none" stroke="var(--c)" stroke-opacity=".3" stroke-width="2.2" stroke-linecap="round"/>
+            <g>
+              <path id="browL" class="halo" fill="var(--c)" fill-opacity=".92"/><path id="browR" class="halo" fill="var(--c)" fill-opacity=".92"/>
+            </g>
+            <g id="eyes">
+              <path id="eyeLbase" class="halo" fill="#030a10"/><path id="eyeRbase" class="halo" fill="#030a10"/>
+              <g clip-path="url(#clipL)"><rect id="scL" fill="url(#sclera)"/><circle id="irL" r="17.5" fill="url(#iris)"/><circle id="irRingL" r="17.5" fill="none" stroke="#02080d" stroke-opacity=".7" stroke-width="2"/><circle id="puL" r="7" fill="#02070b"/><circle id="hiL" r="4" fill="#fff" fill-opacity=".9"/><circle id="hi2L" r="1.9" fill="#fff" fill-opacity=".6"/><rect id="shL" fill="url(#lidShade)"/></g>
+              <g clip-path="url(#clipR)"><rect id="scR" fill="url(#sclera)"/><circle id="irR" r="17.5" fill="url(#iris)"/><circle id="irRingR" r="17.5" fill="none" stroke="#02080d" stroke-opacity=".7" stroke-width="2"/><circle id="puR" r="7" fill="#02070b"/><circle id="hiR" r="4" fill="#fff" fill-opacity=".9"/><circle id="hi2R" r="1.9" fill="#fff" fill-opacity=".6"/><rect id="shR" fill="url(#lidShade)"/></g>
+              <path id="lidUL" fill="none" stroke="var(--c)" stroke-width="3" stroke-linecap="round"/><path id="lidUR" fill="none" stroke="var(--c)" stroke-width="3" stroke-linecap="round"/>
+              <path id="lidLL" fill="none" stroke="var(--c)" stroke-opacity=".55" stroke-width="1.8" stroke-linecap="round"/><path id="lidLR" fill="none" stroke="var(--c)" stroke-opacity=".55" stroke-width="1.8" stroke-linecap="round"/>
+              <path id="creaseL" fill="none" stroke="var(--c)" stroke-opacity=".35" stroke-width="1.8" stroke-linecap="round"/><path id="creaseR" fill="none" stroke="var(--c)" stroke-opacity=".35" stroke-width="1.8" stroke-linecap="round"/>
+            </g>
+            <g id="mouthG">
+              <path id="mIn" fill="#020a10"/>
+              <g clip-path="url(#clipM)"><rect id="teethU" fill="#dcecf2" fill-opacity=".92"/><rect id="teethL" fill="#cfe2ea" fill-opacity=".85"/><ellipse id="tongue" style="fill:hsl(var(--h) 55% 30%)"/></g>
+              <path id="lipU" class="halo" fill="url(#lip)"/><path id="lipL" class="halo" fill="url(#lip)"/>
+              <path id="lipHi" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="2" stroke-linecap="round"/>
+            </g>
+          </g>
+        </g>
+      </svg>
+    </div>
+    <div class="caption">
+      <div class="who"><span class="status" id="dot"></span><span id="who">Jarvis</span></div>
+      <div class="mood" id="mood"></div>
+    </div>
+    <div class="controls" role="toolbar" aria-label="Voice controls">
+      <button class="cb" id="voiceBtn" aria-pressed="true" title="Turn spoken replies on or off"><span class="on">&#128266; Voice on</span><span class="off">&#128263; Voice off</span></button>
+      <button class="cb" id="stopBtn" title="Stop speaking (Esc)" disabled>&#9209; Stop</button>
+      <button class="cb" id="mic" title="Click, speak, click again">&#127908; Speak</button>
+      <button class="cb" id="hfBtn" aria-pressed="false" title="Listens by itself and answers when you pause (experimental)"><span class="on">&#127911; Hands-free on</span><span class="off">&#127911; Hands-free</span></button>
+      <span class="vol" title="Volume">&#128265;<input type="range" id="vol" min="0" max="1" step="0.05" value="1" aria-label="Volume"></span>
+      <button class="cb" id="focusBtn" aria-pressed="false" title="Face only, with subtitles"><span class="on">&#128172; Show chat</span><span class="off">&#128065; Focus</span></button>
+      <button class="cb" id="fsBtn" title="Fullscreen">&#9974; Fullscreen</button>
+      <button class="cb" id="setBtn" title="Settings">&#9881; Settings</button>
+    </div>
+    <div id="subtitle"></div>
+    <div id="player"><div class="bar"><b id="ptitle">Playing</b><button class="x" id="pclose" title="Close">&#10005;</button></div><iframe id="pframe" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div>
+  </section>
+
+  <section class="convo">
+    <div class="top"><h1>CONVERSATION</h1></div>
+    <div id="log" aria-live="polite"></div>
+    <form class="compose" id="form" autocomplete="off">
+      <input id="in" placeholder="Talk to me..." enterkeyhint="send">
+      <button class="send" id="send" title="Send">&#10148;</button>
+    </form>
+  </section>
+</div>
+
+<dialog id="dlg"><form method="dialog">
+  <h2>Settings</h2>
+  <div id="authnote" style="font-size:13px;color:#ff8a8a;display:none">The server wants its API token.</div>
+  <label for="gain">Expression strength: <span id="gainv"></span>&times; (how far the face moves; Jarvis still decides what it shows)</label>
+  <input type="range" id="gain" min="1" max="3.5" step="0.1" style="width:100%">
+  <div id="looks" hidden>
+  <label>Skin tone</label>
+  <div id="skins" style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"></div>
+  <label for="hairc">Hair colour <input type="color" id="hairc" value="#2a1a10" style="vertical-align:middle;margin-left:6px;border:0;background:none;width:34px;height:24px"></label>
+  <label for="eyec">Eye colour <input type="color" id="eyec" value="#6a4a2a" style="vertical-align:middle;margin-left:6px;border:0;background:none;width:34px;height:24px"></label>
+  </div>
+  <label for="tok">API token (API_AUTH_TOKEN in .env; leave empty if the server has none)</label>
+  <input type="password" id="tok" autocomplete="off">
+  <div class="row"><button value="cancel">Cancel</button><button class="p" value="ok">Save</button></div>
+</form></dialog>
+
+<script src="lipsync.js"></script>
+<script>
+"use strict";
+/* ===================================================================================================
+   The face is drawn from numbers. Jarvis (the model) chooses them for every reply (/chat/expression);
+   this file has no emotion names and no emotion -> face rules. Built in: a neutral resting face, generic
+   life (blinks, tiny eye jumps, breathing, springy motion) and the lip sync, which follows the real audio.
+   =================================================================================================== */
+const $ = (id) => document.getElementById(id);
+const qs = new URLSearchParams(location.search);
+const BASE = qs.get("server") || "";
+const store = { get: (k) => { try { return localStorage.getItem(k) } catch { return null } },
+                set: (k, v) => { try { localStorage.setItem(k, v) } catch {} } };
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* ---------- the face model: every value is a spring that chases its target ---------- */
+const REST = { eye_open: .82, lid_droop: 0, eye_smile: 0, pupil_size: 1, brow_raise: 0, brow_asym: 0, brow_tilt: 0, mouth_curve: .12,
+               mouth_open: 0, mouth_width: .5, mouth_skew: 0, lip_press: 0, mouth_round: 0, head_tilt: 0, head_nod: 0, head_turn: 0,
+               gaze_x: 0, gaze_y: 0, hue: 190, glow: .45, blink_rate: 1 };
+const RANGE = { eye_open: [0, 1], lid_droop: [0, 1], eye_smile: [0, 1], pupil_size: [.6, 1.5], brow_raise: [-1, 1], brow_asym: [-1, 1], brow_tilt: [-1, 1],
+                mouth_curve: [-1, 1], mouth_open: [0, 1], mouth_width: [0, 1], mouth_skew: [-1, 1], lip_press: [0, 1], mouth_round: [0, 1],
+                head_tilt: [-15, 15], head_nod: [-1, 1], head_turn: [-1, 1], gaze_x: [-1, 1], gaze_y: [-1, 1], glow: [0, 1], blink_rate: [.3, 3] };
+const STIFF = { eye_open: 24, lid_droop: 20, eye_smile: 18, pupil_size: 12, brow_raise: 15, brow_asym: 15, brow_tilt: 15, mouth_curve: 14,
+                mouth_open: 20, mouth_width: 14, mouth_skew: 14, lip_press: 16, mouth_round: 14, head_tilt: 6.5, head_nod: 7, head_turn: 6,
+                gaze_x: 34, gaze_y: 34, glow: 5, blink_rate: 4 };
+const KEYS = Object.keys(REST).filter((k) => k !== "hue");
+const S = Object.fromEntries(Object.keys(REST).map((k) => [k, { x: REST[k], v: 0, t: REST[k] }]));
+const OFF = {};                       // generic live offsets (eye jumps, speech nods ...) added to the targets
+let gain = parseFloat(store.get("gain") || "2"), holdUntil = 0, state = "idle";
+
+let beatTimers = [];
+function setTargets(f, scale) {
+  for (const k of Object.keys(REST)) if (typeof f[k] === "number") {
+    const r = RANGE[k]; S[k].t = r ? clamp(REST[k] + (f[k] - REST[k]) * scale, r[0], r[1]) : f[k];
+  }
+}
+/* f = {beats:[{at, ...}], mood, emoji, hold} from Jarvis (or one flat face). The beats play out over the speech, like a person's face. */
+function applyFace(f, scale = gain) {
+  beatTimers.forEach(clearTimeout); beatTimers = [];
+  const hold = (typeof f.hold === "number" ? f.hold : 5) * 1000;
+  const beats = Array.isArray(f.beats) && f.beats.length ? f.beats : [f];
+  const dur = Math.max(1500, replyWords / 2.7 * 1000), elapsed = speechStart ? performance.now() - speechStart : 0;
+  beats.forEach((b, i) => {
+    const last = i === beats.length - 1;
+    const go = () => { setTargets(b, scale); holdUntil = performance.now() + (last ? hold : 9000); };
+    const wait = i === 0 ? 0 : Math.max(0, (b.at || 0) * dur - elapsed);
+    if (wait <= 30) go(); else beatTimers.push(setTimeout(go, wait));
+  });
+  if (f.mood !== undefined) $("mood").textContent = f.mood || "";
+  if (f.emoji) { const e = $("emoji"); e.textContent = f.emoji; e.classList.remove("pop"); void e.offsetWidth; e.classList.add("pop"); }
+}
+const hueStep = (a, b, t) => { const d = ((b - a + 540) % 360) - 180; return (a + d * t + 360) % 360; };
+
+/* ---------- geometry ---------- */
+const $$ = (ids) => Object.fromEntries(ids.split(" ").map((i) => [i, $(i)]));
+const E = $$("clipLp clipRp clipMp eyeLbase eyeRbase scL scR irL irR irRingL irRingR puL puR hiL hiR hi2L hi2R shL shR lidUL lidUR lidLL lidLR creaseL creaseR browL browR nose mIn teethU teethL tongue lipU lipL lipHi head plateG feat cheekL cheekR");
+const set = (el, a, v) => { const x = typeof v === "number" ? Math.round(v * 100) / 100 : v, k = "_" + a; if (el[k] !== x) { el[k] = x; el.setAttribute(a, x); } };
+const qctl = (apex, yl, yr) => 2 * apex - (yl + yr) / 2;      // control height that makes a quadratic curve peak at `apex`
+
+function eyeGeometry(side, cx, cy, rx, apTop, apBot, lift) {
+  // corners: outer corner a little higher, inner corner a touch lower
+  const left = side === "L";
+  const A = [cx - rx, cy + (left ? -lift : 2)], B = [cx + rx, cy + (left ? 2 : -lift)];
+  const ct = cy - apTop / .75, cb = cy + apBot / .75;
+  const up = `M${A[0]} ${A[1]}C${cx - rx * .45} ${ct} ${cx + rx * .45} ${ct} ${B[0]} ${B[1]}`;
+  const low = `M${B[0]} ${B[1]}C${cx + rx * .45} ${cb} ${cx - rx * .45} ${cb} ${A[0]} ${A[1]}`;
+  const crease = `M${A[0] + 2} ${A[1] - 8 - apTop * .22}C${cx - rx * .4} ${ct - 12} ${cx + rx * .4} ${ct - 12} ${B[0] - 2} ${B[1] - 8 - apTop * .22}`;
+  return { up, low, full: up + low.replace(/^M[^C]+/, "") + "Z", crease };
+}
+function browShape(xo, xi, base, tilt) {
+  const yo = base - tilt * 8, yi = base + tilt * 16, xm = (xo + xi) / 2, arch = 9 * (1 - Math.abs(tilt) * .6);
+  const ti = 9, to = 3.5, tm = 7;
+  return `M${xo} ${yo - to / 2}Q${xm} ${(yo + yi) / 2 - arch - tm / 2} ${xi} ${yi - ti / 2}L${xi} ${yi + ti / 2}Q${xm} ${(yo + yi) / 2 - arch + tm / 2} ${xo} ${yo + to / 2}Z`;
+}
+
+function draw(p, ls, blink, t) {
+  const turn = p.head_turn, sx = turn * 15;
+  // ---- eyes
+  const rx = 33 - Math.abs(turn) * 2.2, ey = 168;
+  let openAmt = clamp(p.eye_open + (state === "listening" ? .1 : 0), 0, 1.05);
+  const down = Math.max(0, p.gaze_y);                                // looking down lowers the upper lid
+  const top = 31 * openAmt * (1 - p.lid_droop * .62) * (1 - down * .22) * (1 - blink);
+  const bot = (13 * openAmt + 2) * (1 - blink * .7) * (1 - p.eye_smile * .75) - 0;
+  const apTop = Math.max(.6, top), apBot = Math.max(.6, bot * (1 - p.eye_smile * .2));
+  const eyes = [["L", 140 + sx * .9, 1], ["R", 260 + sx * 1.1, 1]];
+  for (const [side, cx] of eyes) {
+    const g = eyeGeometry(side, cx, ey - p.eye_smile * 3, rx, apTop, apBot + p.eye_smile * 7, 3.5);
+    set(E["clip" + side + "p"], "d", g.full); set(E["eye" + side + "base"], "d", g.full);
+    set(E["lidU" + side], "d", g.up); set(E["lidL" + side], "d", g.low); set(E["crease" + side], "d", g.crease);
+    set(E["sc" + side], "x", cx - rx - 2); set(E["sc" + side], "y", ey - 50); set(E["sc" + side], "width", rx * 2 + 4); set(E["sc" + side], "height", 100);
+    const gx = cx + p.gaze_x * rx * .46 + turn * 3, gy = ey + p.gaze_y * 9 - p.eye_smile * 2;
+    for (const id of ["ir", "irRing"]) { set(E[id + side], "cx", gx); set(E[id + side], "cy", gy); }
+    set(E["pu" + side], "cx", gx); set(E["pu" + side], "cy", gy); set(E["pu" + side], "r", 7 * p.pupil_size);
+    set(E["hi" + side], "cx", gx + 5); set(E["hi" + side], "cy", gy - 5.5);
+    set(E["hi2" + side], "cx", gx - 5); set(E["hi2" + side], "cy", gy + 5);
+    set(E["sh" + side], "x", cx - rx - 2); set(E["sh" + side], "y", ey - apTop - 4); set(E["sh" + side], "width", rx * 2 + 4); set(E["sh" + side], "height", 20);
+  }
+  // ---- brows (each side has its own height)
+  const bb = 116 - p.brow_raise * 20;
+  set(E.browL, "d", browShape(100 + sx * .7, 176 + sx * .7, bb + p.brow_asym * 10 + (1 - openAmt) * 3, p.brow_tilt));
+  set(E.browR, "d", browShape(300 + sx * 1.2, 224 + sx * 1.2, bb - p.brow_asym * 10 + (1 - openAmt) * 3, p.brow_tilt));
+  // ---- nose
+  const nx = 200 + sx * 1.5;
+  set(E.nose, "d", `M${nx - 4} 206Q${nx - 8} 236 ${nx - 15} 247Q${nx} 255 ${nx + 15} 247Q${nx + 8} 236 ${nx + 4} 206`);
+  // ---- mouth: the expression sets the base shape, the audio adds the movement of speech
+  const open = clamp(Math.max(p.mouth_open, ls.open * 1.05), 0, 1);
+  const round = clamp(p.mouth_round + ls.round * .9, 0, 1);
+  const wide = clamp(p.mouth_width + ls.wide * .22, 0, 1);
+  const press = p.lip_press * (1 - open);
+  const cx = 200 + sx * 1.3, cy = 275;
+  const w = (28 + 64 * wide) * (1 - round * .5) * (1 - press * .08);
+  const cornerY = cy - p.mouth_curve * 20 + open * 3;
+  const yl = cornerY - p.mouth_skew * 9, yr = cornerY + p.mouth_skew * 9, xl = cx - w, xr = cx + w;
+  const dip = p.mouth_curve * 24 * (1 - round * .5);
+  const gap = open * 50 * (1 - press), tu = (8 + round * 3) * (1 - press * .55), tl = (11 + round * 4) * (1 - press * .55);
+  const inTop = cy + dip * .7 - gap * .16, inBot = cy + dip * .7 + gap;
+  const cIT = qctl(inTop, yl, yr), cIB = qctl(inBot, yl, yr), cOT = qctl(inTop - tu, yl, yr), cOB = qctl(inBot + tl, yl, yr);
+  const inner = `M${xl} ${yl}Q${cx} ${cIT} ${xr} ${yr}Q${cx} ${cIB} ${xl} ${yl}Z`;
+  set(E.mIn, "d", inner); set(E.clipMp, "d", inner);
+  set(E.lipU, "d", `M${xl} ${yl}Q${cx} ${cOT} ${xr} ${yr}Q${cx} ${cIT} ${xl} ${yl}Z`);
+  set(E.lipL, "d", `M${xl} ${yl}Q${cx} ${cIB} ${xr} ${yr}Q${cx} ${cOB} ${xl} ${yl}Z`);
+  set(E.lipHi, "d", `M${xl + w * .3} ${yl + (yr - yl) * .15 + 2}Q${cx} ${qctl(inBot + tl * .55, yl, yr)} ${xr - w * .3} ${yr - (yr - yl) * .15 + 2}`);
+  const showU = clamp(Math.max(ls.teeth, open * .7), 0, 1), showL = clamp(ls.teeth * .8 - .2, 0, 1) * clamp(open * 3, 0, 1);
+  set(E.teethU, "x", xl); set(E.teethU, "width", xr - xl); set(E.teethU, "y", inTop - 6); set(E.teethU, "height", 6 + showU * clamp(gap * .5, 0, 14));
+  set(E.teethL, "x", xl); set(E.teethL, "width", xr - xl); set(E.teethL, "y", inBot - showL * 8); set(E.teethL, "height", 12 * showL + 1);
+  set(E.tongue, "cx", cx); set(E.tongue, "cy", inBot - 3); set(E.tongue, "rx", w * .5); set(E.tongue, "ry", 6 + gap * .16);
+  // ---- cheeks lift with a smile
+  const cheek = clamp(p.eye_smile * .8 + Math.max(0, p.mouth_curve) * .45, 0, 1);
+  set(E.cheekL, "opacity", cheek); set(E.cheekR, "opacity", cheek);
+  // ---- head: roll, nod, turn (features shift more than the plate for depth), breathing
+  const breathe = Math.sin(t / 1900) * 2.2;
+  set(E.head, "transform", `translate(0 ${(-p.head_nod * 10 + breathe).toFixed(2)}) rotate(${p.head_tilt.toFixed(2)} 200 200)`);
+  set(E.plateG, "transform", `translate(${(turn * 5).toFixed(2)} 0)`);
+  set(E.feat, "transform", `translate(0 0)`);
+}
+
+/* the glow colour (hue) and brightness follow Jarvis's face; the CSS variables are touched only when they visibly change,
+   because every change repaints everything that uses the colour */
+let lastH = -1, lastG = -1;
+function applyGlow(p, ls) {
+  const R = document.documentElement.style, h = Math.round(p.hue * 2) / 2, g = Math.round(p.glow * (1 + ls.loud * .3) * 50) / 50;
+  if (h !== lastH) { lastH = h; R.setProperty("--h", h); }
+  if (g !== lastG) { lastG = g; R.setProperty("--glow", g); }
+}
+
+/* ---------- life: blinks, tiny eye jumps, speech-driven nods ---------- */
+let blinkT = -1, nextBlink = performance.now() + 2500, nextSacc = 0, sacc = { x: 0, y: 0 }, last = performance.now(), lastGaze = [0, 0], lastDraw = 0;
+function blinkValue(now) {
+  if (blinkT < 0) return 0;
+  const e = (now - blinkT) / 1000, close = .07, hold = .04, open = .14;       // quick to close, slower to open
+  if (e < close) return e / close;
+  if (e < close + hold) return 1;
+  if (e < close + hold + open) return 1 - (e - close - hold) / open;
+  blinkT = -1; return 0;
+}
+const ls = { open: 0, wide: 0, round: 0, teeth: 0, loud: 0, emph: 0 };
+let ampFake = 0;
+
+function frame(now) {
+  const dt = Math.min(.033, (now - last) / 1000); last = now;
+  // relax toward rest once the expression has been held long enough
+  if (now > holdUntil) for (const k of KEYS) S[k].t += (REST[k] - S[k].t) * (1 - Math.exp(-dt * .8));
+  S.hue.t = S.hue.t; S.hue.x = hueStep(S.hue.x, S.hue.t, 1 - Math.exp(-dt * 5));
+  if (now > holdUntil) S.hue.t = hueStep(S.hue.t, REST.hue, 1 - Math.exp(-dt * .8));
+
+  // lip sync: real audio when it is playing, a gentle token-driven movement otherwise
+  if (playing && analyser) {
+    analyser.getFloatFrequencyData(freqBuf);
+    Object.assign(ls, lip.step(freqBuf, ctx.sampleRate, analyser.fftSize, dt));
+  } else {
+    ampFake = Math.max(0, ampFake - dt * 3.2);
+    const f = state === "speaking" ? ampFake : 0;
+    ls.open += (f - ls.open) * (1 - Math.exp(-dt * 16)); ls.loud = ls.open; ls.wide += (0 - ls.wide) * .1; ls.round += (0 - ls.round) * .1; ls.teeth *= .9; ls.emph *= .9;
+  }
+
+  // generic behaviour layered on the targets
+  if (now > nextSacc) {                                                                    // a small, quick eye jump
+    const big = state === "thinking" ? 0 : (Math.random() < .12 ? .22 : .08);
+    sacc = { x: (Math.random() - .5) * 2 * big, y: (Math.random() - .5) * 1.4 * big };
+    nextSacc = now + 450 + Math.random() * 1900;
+  }
+  const look = state === "thinking" ? { x: -.5 + Math.sin(now / 900) * .12, y: -.42 } : { x: 0, y: 0 };
+  OFF.gaze_x = look.x + sacc.x; OFF.gaze_y = look.y + sacc.y;
+  OFF.head_nod = ls.loud * .1 + ls.emph * .3 - (state === "thinking" ? .08 : 0);
+  OFF.head_tilt = Math.sin(now / 1100) * ls.loud * 1.6 + Math.sin(now / 5200) * .5;
+  OFF.head_turn = OFF.gaze_x * .35;                                                         // the head follows the eyes a little
+  OFF.brow_raise = ls.emph * .5;
+  OFF.mouth_open = 0;
+  if (state === "listening") { OFF.eye_open = .08; OFF.head_tilt += 2; }
+  else OFF.eye_open = 0;
+
+  if (blinkT < 0 && now > nextBlink) {                                                      // blink more often after a big eye jump
+    blinkT = now; nextBlink = now + (1800 + Math.random() * 4200) / S.blink_rate.x;
+    if (Math.random() < .12) nextBlink = now + 260;                                          // sometimes a double blink
+  }
+  const blink = blinkValue(now);
+
+  // springs
+  const p = {};
+  for (const k of KEYS) {
+    const sp = S[k], w = STIFF[k], tgt = sp.t + (OFF[k] || 0);
+    for (let i = 0; i < 2; i++) {                                                            // two sub-steps: stable at high stiffness
+      const h = dt / 2, a = (tgt - sp.x) * w * w - 2 * .78 * w * sp.v;                        // slightly under-damped: a touch of overshoot
+      sp.v += a * h; sp.x += sp.v * h;
+    }
+    const r = RANGE[k]; p[k] = r ? clamp(sp.x, r[0] - (k === "head_tilt" ? 0 : .08), r[1] + (k === "head_tilt" ? 0 : .08)) : sp.x;
+  }
+  p.hue = S.hue.x;
+  applyGlow(p, ls);
+  if (avatar) { try { avatar.update(p, ls, blink, now); } catch (e) { console.warn('3D head failed, using the drawn face', e); avatar = null; $('face').classList.remove('has3d'); } }
+  else {
+    // a still face is drawn about 11 times a second (just enough for the slow breathing); a moving one 30 times a second
+    let moving = blink > 0 || ls.loud > .01 || ls.open > .01 || state === "speaking";
+    if (!moving) for (const k of KEYS) { const sp = S[k]; if (Math.abs(sp.v) > .002 || Math.abs(sp.t + (OFF[k] || 0) - sp.x) > .002) { moving = true; break; } }
+    if (now - lastDraw >= (moving ? 32 : 90)) { draw(p, ls, blink, now); lastDraw = now; }   // 30 fps while moving is indistinguishable from 60
+  }
+  requestAnimationFrame(frame);
+}
+function setState(s) { state = s; $("stage").dataset.state = s; $("stopBtn").disabled = !(s === "speaking" || s === "thinking"); }
+
+/* ---------- audio: queue of mp3 chunks -> analyser (lip sync) -> volume -> speakers ---------- */
+let ctx = null, analyser = null, gainNode = null, freqBuf = null, playing = false, decoding = 0, pendingVideo = null, playhead = 0, speechStart = 0, replyWords = 0;
+const lip = new LipSync(), live = new Set();   // live: chunks scheduled or playing
+let volume = parseFloat(store.get("vol") || "1");
+function audio() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = ctx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = .25;
+    gainNode = ctx.createGain(); gainNode.gain.value = volume;
+    analyser.connect(gainNode); gainNode.connect(ctx.destination);                           // analyse BEFORE the volume knob
+    freqBuf = new Float32Array(analyser.frequencyBinCount);
+  }
+  if (ctx.state === "suspended") ctx.resume();
+  return ctx;
+}
+async function enqueue(b64) {
+  const bin = atob(b64), buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  decoding++;
+  let audioBuf;
+  try { audioBuf = await audio().decodeAudioData(buf.buffer); } catch { return; } finally { decoding--; }
+  schedule(audioBuf);
+}
+/* each chunk starts exactly when the previous one ends (no gap), as soon as it has been decoded */
+function schedule(audioBuf) {
+  const c = audio(), t = Math.max(c.currentTime + .02, playhead);
+  const src = c.createBufferSource(); src.buffer = audioBuf; src.connect(analyser);
+  src.onended = () => { live.delete(src); if (!live.size && decoding === 0 && !busy) speechDone(); };
+  src.start(t); playhead = t + audioBuf.duration; live.add(src);
+  if (!playing) { playing = true; speechStart = performance.now(); }
+  setState("speaking");
+}
+function speechDone() { playing = false; playhead = 0; lip.reset(); if (state === "speaking") setState("idle"); onSpeechEnd(); flushVideo(); }
+function stopAudio() { for (const s of live) { s.onended = null; try { s.stop(); } catch {} } live.clear(); playhead = 0; playing = false; lip.reset(); }
+function stopSpeaking() { stopAudio(); abort && abort.abort(); setState("idle"); flushVideo(); }
+
+/* ---------- conversation ---------- */
+const log = $("log"); let voiceOn = store.get("voice") !== "0", busy = false, token = store.get("token") || "", abort = null;
+const headers = () => ({ "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) });
+function bubble(cls, text) { const d = document.createElement("div"); d.className = "m " + cls; d.textContent = text; log.appendChild(d); log.scrollTop = log.scrollHeight; return d; }
+const setOnline = (ok) => $("dot").classList.toggle("off", !ok);
+
+function showPlayer(a) {
+  $("pframe").src = `https://www.youtube.com/embed/${encodeURIComponent(a.video_id)}?autoplay=1&rel=0`;
+  $("ptitle").textContent = a.title || "Playing"; $("player").classList.add("on");
+}
+function closePlayer() { pendingVideo = null; $("pframe").src = "about:blank"; $("player").classList.remove("on"); }
+/* a video starts only after the assistant has finished speaking, never on top of the voice */
+function flushVideo() { if (pendingVideo && !playing && decoding === 0 && live.size === 0 && !busy) { const a = pendingVideo; pendingVideo = null; showPlayer(a); } }
+$("pclose").onclick = closePlayer;
+
+async function requestFace(userText, reply, previous) {
+  try {
+    const r = await fetch(BASE + "/chat/expression", { method: "POST", headers: headers(), body: JSON.stringify({ user_text: userText, reply, previous }) });
+    if (r.ok) { const f = await r.json(); if (f && Object.keys(f).length) applyFace(f); }
+  } catch {}
+}
+
+async function send(text) {
+  if (!text.trim() || busy) return;
+  busy = true; $("send").disabled = true; stopAudio(); if (voiceOn) audio();
+  abort = new AbortController();
+  bubble("me", text);
+  const out = bubble("bot cursor", ""); let reply = "", faceAsked = false, timer = null;
+  setState("thinking"); $("mood").textContent = ""; $("subtitle").textContent = "";
+  speechStart = 0;
+  const askFace = () => { if (faceAsked || !reply) return; faceAsked = true; replyWords = reply.trim().split(/\s+/).length; requestFace(text, reply.trim(), Object.fromEntries(Object.keys(REST).map((k) => [k, +S[k].x.toFixed(2)]))); };
+  try {
+    const r = await fetch(BASE + "/chat/stream", { method: "POST", headers: headers(), signal: abort.signal, body: JSON.stringify({ text, voice: voiceOn, client: "web" }) });
+    if (r.status === 401) { out.remove(); bubble("sys err", "The server needs its API token. Open settings."); openSettings(true); return; }
+    if (!r.ok) throw new Error("Server answered " + r.status);
+    setOnline(true);
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i; while ((i = buf.indexOf("\n\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
+        if (!line.startsWith("data:")) continue;
+        let ev; try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+        if (ev.type === "start") $("who").textContent = ev.persona || "Jarvis";
+        else if (ev.type === "token") {
+          reply += ev.text; out.textContent = reply; $("subtitle").textContent = reply; log.scrollTop = log.scrollHeight;
+          if (!voiceOn) { setState("speaking"); ampFake = .3 + Math.random() * .55; }
+          if (!speechStart || !playing) speechStart = speechStart || performance.now(); clearTimeout(timer); timer = setTimeout(askFace, 500);   // text looks finished: ask for the face while the voice is still playing
+        } else if (ev.type === "audio") { if (voiceOn) enqueue(ev.data); }
+        else if (ev.type === "action") {
+          const a = ev.action || {};
+          if (a.type === "play_video" && a.video_id) { pendingVideo = a; if (!voiceOn) flushVideo(); } else if (a.type === "close_video") closePlayer();
+        } else if (ev.type === "voice_error") bubble("sys", "Voice unavailable: " + ev.message);
+        else if (ev.type === "done") { if (!reply) { reply = ev.reply || ""; out.textContent = reply; $("subtitle").textContent = reply; } }
+      }
+    }
+    clearTimeout(timer); askFace();
+  } catch (e) {
+    if (e.name === "AbortError") { out.classList.add("err"); out.textContent = reply ? reply + " [stopped]" : "[stopped]"; }
+    else { setOnline(false); out.classList.add("err"); out.textContent = reply || ("I can't reach the server. " + (e.message || "")); }
+  } finally {
+    out.classList.remove("cursor"); busy = false; $("send").disabled = false; abort = null;
+    if (!live.size && decoding === 0) speechDone();     // nothing (more) to say: free the face and start a waiting video
+    setTimeout(flushVideo, 450);
+    if (!hf.on) $("in").focus();
+  }
+}
+$("form").addEventListener("submit", (e) => { e.preventDefault(); const v = $("in").value; $("in").value = ""; send(v); });
+
+/* ---------- microphone ---------- */
+async function transcribeAndSend(blob) {
+  setState("thinking");
+  try {
+    const r = await fetch(BASE + "/chat/stt", { method: "POST", headers: { "Content-Type": "audio/webm", ...(token ? { Authorization: "Bearer " + token } : {}) }, body: blob });
+    const j = await r.json();
+    if (r.ok && j.text) send(j.text); else { setState("idle"); if (!hf.on) bubble("sys", "I could not hear that. Try again."); }
+  } catch { setState("idle"); bubble("sys err", "Could not reach the server for speech."); }
+}
+const mimeType = () => (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) ? "audio/webm;codecs=opus" : "";
+let rec = null;
+$("mic").onclick = async () => {
+  if (rec) { rec.stop(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); const chunks = [];
+    rec = new MediaRecorder(stream, mimeType() ? { mimeType: mimeType() } : {});
+    rec.ondataavailable = (e) => chunks.push(e.data);
+    rec.onstop = () => { stream.getTracks().forEach((t) => t.stop()); $("mic").classList.remove("rec"); $("mic").textContent = "🎤 Speak";
+      const blob = new Blob(chunks, { type: "audio/webm" }); rec = null; transcribeAndSend(blob); };
+    rec.start(); $("mic").classList.add("rec"); $("mic").textContent = "⏺ Listening... click to send"; setState("listening"); stopAudio(); audio();
+  } catch { bubble("sys err", "Microphone is not available (allow it in the browser)."); }
+};
+
+/* ---------- hands-free: listen by itself, answer when you pause (experimental) ---------- */
+const hf = { on: false, stream: null, an: null, rec: null, chunks: [], timer: null, ignoreUntil: 0, loudSince: 0, quietSince: 0, started: 0 };
+function onSpeechEnd() { hf.ignoreUntil = performance.now() + 700; }                       // do not hear our own voice
+async function hfStart() {
+  try {
+    hf.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    const c = audio(), src = c.createMediaStreamSource(hf.stream); hf.an = c.createAnalyser(); hf.an.fftSize = 512; src.connect(hf.an);
+    const buf = new Float32Array(hf.an.fftSize); hf.on = true; $("hfBtn").setAttribute("aria-pressed", "true");
+    hf.timer = setInterval(() => {
+      const now = performance.now();
+      if (busy || playing || now < hf.ignoreUntil || rec) { hf.loudSince = 0; return; }
+      hf.an.getFloatTimeDomainData(buf); let s = 0; for (const v of buf) s += v * v; const rms = Math.sqrt(s / buf.length);
+      if (!hf.rec) {
+        if (rms > .03) { hf.loudSince = hf.loudSince || now; if (now - hf.loudSince > 90) hfBegin(now); } else hf.loudSince = 0;
+      } else {
+        if (rms > .02) hf.quietSince = 0; else { hf.quietSince = hf.quietSince || now;
+          if (now - hf.quietSince > 1100 && now - hf.started > 700) hfEnd(); }
+        if (now - hf.started > 20000) hfEnd();
+      }
+    }, 50);
+    setState("listening"); setTimeout(() => state === "listening" && !hf.rec && setState("idle"), 600);
+  } catch { bubble("sys err", "Microphone is not available (allow it in the browser)."); hfStop(); }
+}
+function hfBegin(now) {
+  hf.chunks = []; hf.started = now; hf.quietSince = 0;
+  hf.rec = new MediaRecorder(hf.stream, mimeType() ? { mimeType: mimeType() } : {});
+  hf.rec.ondataavailable = (e) => hf.chunks.push(e.data);
+  hf.rec.onstop = () => { const blob = new Blob(hf.chunks, { type: "audio/webm" }); hf.rec = null; if (hf.on) transcribeAndSend(blob); };
+  hf.rec.start(); setState("listening"); stopAudio();
+}
+function hfEnd() { if (hf.rec && hf.rec.state !== "inactive") hf.rec.stop(); }
+function hfStop() {
+  clearInterval(hf.timer); if (hf.rec && hf.rec.state !== "inactive") { hf.on = false; hf.rec.stop(); }
+  if (hf.stream) hf.stream.getTracks().forEach((t) => t.stop());
+  hf.on = false; hf.stream = null; hf.rec = null; $("hfBtn").setAttribute("aria-pressed", "false");
+}
+$("hfBtn").onclick = () => (hf.on ? hfStop() : hfStart());
+
+/* ---------- controls ---------- */
+const setVoice = (v) => { voiceOn = v; store.set("voice", v ? "1" : "0"); $("voiceBtn").setAttribute("aria-pressed", v); if (!v) stopAudio(); else audio(); };
+$("voiceBtn").onclick = () => setVoice(!voiceOn); $("voiceBtn").setAttribute("aria-pressed", voiceOn);
+$("stopBtn").onclick = stopSpeaking;
+$("vol").value = volume; $("vol").oninput = () => { volume = parseFloat($("vol").value); store.set("vol", String(volume)); if (gainNode) gainNode.gain.value = volume; };
+$("focusBtn").onclick = () => { const f = $("app").classList.toggle("focus"); $("focusBtn").setAttribute("aria-pressed", String(f)); store.set("focus", f ? "1" : "0"); };
+if (store.get("focus") === "1") { $("app").classList.add("focus"); $("focusBtn").setAttribute("aria-pressed", "true"); } else $("focusBtn").setAttribute("aria-pressed", "false");
+$("fsBtn").onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && (playing || busy)) stopSpeaking(); });
+
+function openSettings(auth) {
+  $("authnote").style.display = auth ? "block" : "none"; $("tok").value = token;
+  $("gain").value = gain; $("gainv").textContent = gain.toFixed(1); $("dlg").showModal();
+}
+$("gain").oninput = () => { $("gainv").textContent = parseFloat($("gain").value).toFixed(1); };
+$("setBtn").onclick = () => openSettings(false);
+$("dlg").addEventListener("close", () => {
+  if ($("dlg").returnValue === "ok") { token = $("tok").value.trim(); store.set("token", token); gain = parseFloat($("gain").value); store.set("gain", String(gain)); boot(); }
+});
+
+async function boot() {
+  try {
+    const p = await fetch(BASE + "/personas", { headers: headers() });
+    if (p.status === 401) { setOnline(false); openSettings(true); return; }
+    if (p.ok) { $("who").textContent = (await p.json()).active; setOnline(true); }
+    const h = await fetch(BASE + "/chat/history?limit=12", { headers: headers() });
+    if (h.ok) { log.innerHTML = ""; for (const m of await h.json()) bubble(m.role === "user" ? "me" : "bot", m.content); }
+  } catch { setOnline(false); bubble("sys err", "Server not reachable. Start it with start_server.bat."); }
+}
+
+/* test hooks: ?face={...} sets a face by hand; ?ls={"open":.7,...} freezes the mouth movement of speech */
+try { const f = qs.get("face"); if (f) { const o = JSON.parse(f); applyFace({ hold: 3600, ...o }, 1); for (const k of Object.keys(RANGE)) if (typeof o[k] === "number") S[k].x = S[k].t; if (typeof o.hue === "number") S.hue.x = o.hue; } } catch {}
+try { const l = qs.get("ls"); if (l) { const o = JSON.parse(l); const hold = () => Object.assign(ls, o); setInterval(hold, 16); lip.step = () => ls; Object.assign(ls, o); playing = true; analyser = { getFloatFrequencyData() {}, fftSize: 1024 }; ctx = { sampleRate: 24000 }; } } catch {}
+/* ---------- the 3D head (falls back to the drawn face when WebGL or the model is unavailable) ---------- */
+let avatar = null;
+const SKINS = ["#f1c9b0", "#e3b394", "#d8a88c", "#c68863", "#a86f4a", "#8a5638", "#6b3f27", "#4a2b1a"];
+const look = { skin: store.get("skin") || SKINS[2], hair: store.get("hair") || "#2a1a10", eye: store.get("eye") || "#6a4a2a" };
+const shade = (hex, k) => { const n = parseInt(hex.slice(1), 16); const c = [n >> 16, (n >> 8) & 255, n & 255].map((v) => clamp(Math.round(v * k), 0, 255)); return "#" + c.map((v) => v.toString(16).padStart(2, "0")).join(""); };
+function applyLook() { if (!avatar) return; avatar.setSkin(look.skin); avatar.setHair(shade(look.hair, .45), look.hair); avatar.setEye(look.eye); }
+if (qs.get("3d") === "1") {
+  import("./avatar3d.js").then((m) => m.createAvatar($("avatar3d"), { skin: look.skin, eye: look.eye, hairRoot: shade(look.hair, .45), hairTip: look.hair }))
+    .then((a) => { avatar = a; $("face").classList.add("has3d"); $("looks").hidden = false; applyLook(); })
+    .catch((e) => console.warn("3D head unavailable, using the drawn face:", e && e.message || e));
+}
+$("skins").innerHTML = SKINS.map((c) => `<button type="button" class="sw" data-c="${c}" title="${c}" style="width:26px;height:26px;border-radius:50%;border:2px solid transparent;background:${c};cursor:pointer;padding:0"></button>`).join("");
+$("skins").onclick = (e) => { const b = e.target.closest(".sw"); if (!b) return; look.skin = b.dataset.c; store.set("skin", look.skin); applyLook(); markSkin(); };
+const markSkin = () => document.querySelectorAll("#skins .sw").forEach((b) => (b.style.borderColor = b.dataset.c === look.skin ? "#fff" : "transparent"));
+$("hairc").value = look.hair; $("eyec").value = look.eye; markSkin();
+$("hairc").oninput = () => { look.hair = $("hairc").value; store.set("hair", look.hair); applyLook(); };
+$("eyec").oninput = () => { look.eye = $("eyec").value; store.set("eye", look.eye); applyLook(); };
+
+requestAnimationFrame(frame);
+if (!qs.get("face") && !qs.get("ls")) boot();
+</script>
+</body>
+</html>

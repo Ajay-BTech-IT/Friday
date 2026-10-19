@@ -24,6 +24,79 @@ async def try_switch(text: str) -> dict | None:
     return await persona_db.switch(m.group("name").strip())
 
 
+# ---------------------------------------------------------------------------
+# "close the player": decided by code, because a model that merely SAYS "closed" closes nothing.
+# A bare "close"/"stop" only counts while a video was started in the last 30 minutes.
+# ---------------------------------------------------------------------------
+_PLAYER_WORD = r"(?:player|video|song|music|trailer|youtube|window|playback|playing)"
+_CLOSE = re.compile(
+    r"^\s*(?:(?:ok(?:ay)?|please|pls|hey|jarvis|now)[,\s]+)*(?:close|stop|shut|kill|turn\s+off|exit|quit|end)\s*"
+    r"(?:(?:the|this|that|my|it)\s*)*(?P<w>" + _PLAYER_WORD + r")?(?:\s+(?:now|please|pls|off|down))*\W*$", re.I)
+_player_until = 0.0
+
+
+def note_player() -> None:
+    """A play_video action went out: for the next 30 minutes a bare 'close' means the player."""
+    import time
+
+    global _player_until
+    _player_until = time.time() + 1800
+
+
+def is_player_close(text: str) -> bool:
+    import time
+
+    m = _CLOSE.match(text)
+    return bool(m and (m.group("w") or time.time() < _player_until))
+
+
+_PLAY = re.compile(
+    r"^\s*(?:(?:ok(?:ay)?|please|pls|hey|jarvis|could\s+you|can\s+you|would\s+you|just|now|and)[,\s]+)*"
+    r"play\s+(?:me\s+)?(?P<q>.+?)\s*[.!?]*\s*$", re.I)
+_NEXT = re.compile(
+    r"^\s*(?:(?:ok(?:ay)?|please|pls|hey|jarvis|now|and)[,\s]+)*(?P<w>next|another|skip|previous|prev|back)"
+    r"(?:\s+(?:song|one|video|track|please|pls))*\W*$", re.I)
+_PLAY_NOT = re.compile(r"\b(?:not|instead|remind|reminder|schedule|at\s+\d|tomorrow|later|badminton|game|cricket|football)\b", re.I)
+
+
+_retry_until = 0.0
+_GENERIC = set("video videos music song songs something anything stuff random tune tunes track tracks one nice good new".split())
+
+
+def note_play_failed() -> None:
+    """A play request found nothing: for 3 minutes a short follow-up ("bindaas from jailer 2") is the corrected title."""
+    import time
+
+    global _retry_until
+    _retry_until = time.time() + 180
+
+
+def media_command(text: str) -> tuple[str, object] | None:
+    """('play', query) for "play <something>", ('step', +1/-1) for "next song" / "previous" (only within 30 minutes of
+    a video starting). Decided by code, because a model that merely SAYS "playing" plays nothing. Corrections such as
+    "play jailer one, not 2" are left to the model, which has to read the search results."""
+    import time
+
+    m = _NEXT.match(text)
+    if m and time.time() < _player_until:
+        return ("step", -1 if m.group("w").lower() in ("previous", "prev", "back") else 1)
+    m = _PLAY.match(text)
+    if not m:
+        words = text.split()
+        if time.time() < _retry_until and 1 <= len(words) <= 9 and not text.rstrip().endswith("?"):
+            return ("play", text.strip())       # follow-up to a search that found nothing: the user is fixing the title
+        return None
+    q = re.sub(r"^(?:the|some|a|an)\s+", "", m.group("q").strip(), flags=re.I)
+    if not q or _PLAY_NOT.search(q) or re.fullmatch(r"(?:it|that|this|again|more)", q, re.I):
+        return None
+    if all(w in _GENERIC or w in ("please", "pls", "now", "me", "for", "us") for w in re.findall(r"[\w']+", q.lower())):
+        return ("ask", None)                    # "play some video": nothing to search for, so ask instead of guessing
+    nxt = re.fullmatch(r"(next|another|previous|prev)(?:\s+(?:song|one|video|track))?", q, re.I)
+    if nxt:  # "play the next song": a step, never a search for those words
+        return ("step", -1 if nxt.group(1).lower() in ("previous", "prev") else 1) if time.time() < _player_until else None
+    return ("play", q)
+
+
 def skip_retrieval(text: str) -> bool:
     """Memory retrieval is wasted on greetings, acknowledgements and plain meal logging."""
     if _TRIVIAL.match(text):

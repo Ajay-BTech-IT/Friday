@@ -144,6 +144,39 @@ async def _switch_reply(new_persona: dict, text: str, device_id: UUID | None, ch
     return await _canned_reply(new_persona, reply, ["switch_persona"], text, device_id, channel)
 
 
+async def _player_close_reply(text: str, device_id: UUID | None, channel: str, client: str = "pc") -> dict | None:
+    """Close / play / next-song, decided by code so the player really does what the reply says."""
+    persona = await persona_db.get_active()
+    if router.is_player_close(text):
+        if client == "phone":  # the video plays inside the YouTube app, which only the user can close
+            res = await _canned_reply(persona, "The video is playing in the YouTube app, so I can't close it from here. "
+                                      "Press back or swipe the app away.", ["close_player"], text, device_id, channel)
+            return {**res, "actions": []}
+        res = await _canned_reply(persona, "Closed.", ["close_player"], text, device_id, channel)
+        return {**res, "actions": [{"type": "close_video"}]}
+    cmd = router.media_command(text)
+    if not cmd:
+        return None
+    from tools import youtube as ytool
+
+    if cmd[0] == "ask":
+        router.note_play_failed()               # the next short message is the title
+        res = await _canned_reply(persona, "What would you like me to play? Tell me the song, movie or artist.", ["play_youtube"], text, device_id, channel)
+        return {**res, "actions": []}
+    found = await ytool.play_query(str(cmd[1]), await ytool._names()) if cmd[0] == "play" else ytool.step(int(cmd[1]))  # type: ignore[arg-type]
+    if found.get("not_found"):
+        router.note_play_failed()
+        found["error"] = "I couldn't find that on YouTube. Tell me the title or the movie it is from and I will try again."
+    if "error" in found:
+        res = await _canned_reply(persona, found["error"], ["play_youtube"], text, device_id, channel)
+        return {**res, "actions": []}
+    info = found["info"]
+    router.note_player()
+    router._retry_until = 0.0
+    res = await _canned_reply(persona, f'Playing {ytool.short_title(info["title"])}.', ["play_youtube"], text, device_id, channel)
+    return {**res, "actions": [ytool._action(info)]}
+
+
 async def _send_flow_reply(text: str, device_id: UUID | None, channel: str) -> dict | None:
     reply = await router.try_send_flow(text)
     if reply is None:
@@ -198,6 +231,9 @@ async def chat(text: str, device_id: UUID | None = None, channel: str = "text", 
     new_persona = await router.try_switch(text)
     if new_persona:
         return await _switch_reply(new_persona, text, device_id, channel)
+    closed = await _player_close_reply(text, device_id, channel, client)
+    if closed:
+        return closed
     canned = await _send_flow_reply(text, device_id, channel)
     if canned:
         return canned
@@ -224,9 +260,11 @@ async def chat(text: str, device_id: UUID | None = None, channel: str = "text", 
     llm_ms = int((time.perf_counter() - t_llm) * 1000)
     await _save_reply(ctx, reply, tools_called)
     asyncio.create_task(_log_run(ctx, tools_called, llm_ms, t_start, tin, tout, error))
+    actions = _client_actions(_tool_outputs(new_msgs)) if not error else []
+    if any(a.get("type") == "play_video" for a in actions):
+        router.note_player()
     return {"reply": reply, "persona": ctx["persona"]["name"], "tools": tools_called, "conversation_id": ctx["conv_id"],
-            "voice_id": ctx["persona"].get("tts_voice_id"), "error": error,
-            "actions": _client_actions(_tool_outputs(new_msgs)) if not error else []}
+            "voice_id": ctx["persona"].get("tts_voice_id"), "error": error, "actions": actions}
 
 
 async def chat_stream(text: str, device_id: UUID | None = None, channel: str = "text", client: str = "pc") -> AsyncIterator[dict]:
@@ -238,6 +276,14 @@ async def chat_stream(text: str, device_id: UUID | None = None, channel: str = "
         yield _start_event(new_persona)
         yield {"type": "token", "text": res["reply"]}
         yield {"type": "done", **res}
+        return
+    closed = await _player_close_reply(text, device_id, channel, client)
+    if closed:
+        yield _start_event(await persona_db.get_active())
+        for act in closed["actions"]:
+            yield {"type": "action", "action": act}
+        yield {"type": "token", "text": closed["reply"]}
+        yield {"type": "done", **{k: v for k, v in closed.items() if k != "actions"}}
         return
     canned = await _send_flow_reply(text, device_id, channel)
     if canned:
@@ -273,6 +319,8 @@ async def chat_stream(text: str, device_id: UUID | None = None, channel: str = "
                         ctx["persona"] = await persona_db.get_active()
                         yield _start_event(ctx["persona"])
                     for act in _client_actions([text_of(chunk.content)]):
+                        if act.get("type") == "play_video":
+                            router.note_player()
                         yield {"type": "action", "action": act}
             elif (isinstance(chunk, AIMessageChunk) and not chunk.tool_call_chunks
                   and meta.get("langgraph_node") == "agent"):  # ignore LLM calls made INSIDE tools (classifiers etc.)

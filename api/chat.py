@@ -43,6 +43,22 @@ async def chat_stream(body: ChatIn):
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
+class ExpressionIn(BaseModel):
+    user_text: str = Field(max_length=4000)
+    reply: str = Field(min_length=1, max_length=4000)
+    previous: dict | None = None
+
+
+@router.post("/expression")
+async def expression(body: ExpressionIn) -> dict:
+    """How the active persona's face looks while saying `reply` (the web UI draws it). {} if the model is unavailable.
+    Not behind the conversation lock: it must never wait for, or delay, a chat turn."""
+    from orchestrator import expression as expr
+
+    face = await expr.express(await persona_db.get_active(), body.user_text, body.reply, body.previous)
+    return face or {}
+
+
 class TTSIn(BaseModel):
     text: str = Field(min_length=1, max_length=3000)
     persona: str | None = None

@@ -80,7 +80,7 @@ async def list_voices(locale: str | None = None, gender: str | None = None) -> s
 @safe
 async def set_language(language: str, locale: str | None = None, script: str = "native", style: str | None = None) -> str:
     """Change the language you speak AND write in, until the user changes it again. "switch to Tamil" ->
-    language='Tamil', locale='ta-IN', style='Tanglish like Chennai people: Tamil mixed with everyday English words'.
+    language='Tamil', locale='ta-IN', style='polished, professional Tamil with common English terms; no slang or colloquial fillers'.
     "back to English" -> language='English'. locale is the voice locale: ta-IN, hi-IN, te-IN, kn-IN, ml-IN, bn-IN,
     mr-IN, gu-IN, pa-IN, en-IN, en-US, en-UK, fr-FR, de-DE, es-ES, ja-JP ... script='native' (default: the language's own
     script, best for the voice) or 'roman' (Latin letters, only if the user asks to read it in English letters).

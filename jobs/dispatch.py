@@ -50,7 +50,7 @@ async def dispatch_due() -> int:
         (urgent if is_urgent else ready).append(r)
 
     sent = 0
-    # reminders that came due while the PC/server was off: one honest digest, no individual pings, no late emails
+    # reminders that came due while the PC/server was off: one honest digest (app note + one mail), no individual pings
     late_cut = utcnow() - timedelta(hours=3)
     stale = [r for r in urgent + ready if r["fire_at"] < late_cut]
     if stale:
@@ -124,11 +124,32 @@ async def _after_send(r: dict) -> None:
 
 
 async def _deliver_missed(stale: list[dict], tzname: str) -> None:
-    from jobs import reminder_text
+    """Reminders that came due while the PC was off: one honest note in the app, plus ONE digest mail for the ones the
+    user asked to get by mail (a reminder the user never saw must not be marked as sent)."""
+    from google_svc import oauth
+    from google_svc import send as gsend
+    from jobs import reminder_mail, reminder_text
 
     persona, owner = await _voice()
     items = [f"{reminder_text.clean(r['message'])} (was due {r['fire_at'].astimezone(tz(tzname)).strftime('%a %I:%M %p')})" for r in stale]
     line = await reminder_text.compose_missed(items, persona, owner)
+    mailed = [r for r in stale if r.get("channel") == "email"]
+    if mailed:
+        try:
+            lines = [f"- {i}" for i, r in zip(items, stale) if r.get("channel") == "email"]
+            await gsend.send_reminder_email(f"Missed reminders ({len(lines)})", line + "\n\n" + "\n".join(lines),
+                                            reminder_mail.simple_html(line, " | ".join(lines)))
+        except oauth.GoogleTransient as e:
+            # network not up yet right after the PC woke: retry these in 2 minutes, report the rest now
+            log.warning("missed-reminder mail delayed (network): %s", e)
+            retry = [r for r in mailed if (r.get("attempts") or 0) + 1 < MAX_EMAIL_ATTEMPTS]
+            for r in retry:
+                await db.execute("UPDATE reminders SET attempts=attempts+1, fire_at=%s WHERE id=%s", utcnow() + timedelta(minutes=2), r["id"])
+            stale = [r for r in stale if r not in retry]
+            if not stale:
+                return
+        except Exception as e:
+            log.warning("missed-reminder mail failed: %s", e)
     await notify.deliver(line, None, "reminder", False, stale[0]["id"])
     for r in stale:
         await _after_send(r)

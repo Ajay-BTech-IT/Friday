@@ -1,4 +1,4 @@
-# Personal Agent (PC build)
+﻿# Personal Agent (PC build)
 
 Autonomous backend for the FRIDAY personal agent: persona chat, shared memory, tasks/reminders/routines,
 calendar, meals, briefings, Gmail digest and draft approval. Follows `../Architecture_Plan.txt` and
@@ -49,11 +49,11 @@ calendar, meals, briefings, Gmail digest and draft approval. Follows `../Archite
 
 ## Flows implemented
 
-Morning briefing (precomputed at 03:30, delivered at your wake time) · casual mention -> reminder ·
+Morning briefing (precomputed at 03:30, delivered at your wake time) Â· casual mention -> reminder Â·
 schedule + remind (calendar event + morning-of + 30-min-before reminders + linked task, synced to Google if
-connected) · Gmail overnight digest, importance 1-5, action items to tasks, draft/approve/send · meals
-(catalog first, Gemini estimate otherwise, corrections become preferences) · persona switch without an LLM
-call · evening wrap-up · quiet hours (sleep -> wake), daily cap, grouped reminders.
+connected) Â· Gmail overnight digest, importance 1-5, action items to tasks, draft/approve/send Â· meals
+(catalog first, Gemini estimate otherwise, corrections become preferences) Â· persona switch without an LLM
+call Â· evening wrap-up Â· quiet hours (sleep -> wake), daily cap, grouped reminders.
 
 ## Local embeddings (memory search)
 Memory vectors come from a local model, `nomic-embed-text` (768 dimensions) running in Ollama, so nothing is sent to
@@ -83,3 +83,30 @@ Drop numbered `.sql` files into `database/migrations/` for later changes.
 - Reminders only fire while `run.py` is running; on restart it catches up (stale routine reminders are dropped).
 - Windows toasts need `winotify` (installed); set `DESKTOP_NOTIFICATIONS=false` to disable.
 - Not yet run against live Gemini/pgvector/Google: see the test notes in the hand-off message.
+
+## Face + conversation page
+
+Open **http://127.0.0.1:8000/ui/** while the server runs. A glowing face on the left, the chat on the right (type, or use the mic;
+replies are also spoken and the mouth follows the voice; YouTube requests play inside the page).
+The face is not scripted: after each reply the active persona is asked (`POST /chat/expression`, see `orchestrator/expression.py`)
+how its face looks while saying it, and it returns numbers (eyes, brows, mouth, head tilt, gaze, glow colour) plus an emoji and a
+mood word that the page simply draws. Switch persona and the face changes with the character. The first time, open the gear icon
+and paste `API_AUTH_TOKEN` if your `.env` has one. "Expression strength" in settings only scales how far the face moves.
+
+The page's lip sync (`web/lipsync.js`) analyses the voice while it plays: loudness and the low formant band open the jaw, the
+vowel's frequency balance spreads or rounds the lips, hissing sounds show teeth, and pauses close the mouth. Controls under the face:
+Voice on/off, Stop (or Esc), Speak (click to talk), Hands-free (experimental: listens and answers when you pause), volume,
+Focus (face + subtitles only), Fullscreen, Settings. With voice off the server is not asked for audio at all.
+
+### The 3D head
+`web/avatar3d.js` draws a 3D head with three.js (files in `web/vendor/`, no CDN needed): a scanned human head with the 52 standard facial
+shape keys, a skin tone you choose (Settings: 8 swatches, hair and eye colour) with procedural pores and warm shading, strand-rendered
+hair and eyebrows, and glossy eyes. The same expression numbers and lip-sync values drive the shape keys. If WebGL or the model is not
+available the page falls back to the drawn face automatically. **The 3D head is opt-in: open `/ui/?3d=1`.** By default the page uses the lighter drawn face (nothing from `web/vendor/` is loaded). The head model is "Face Cap" from the
+three.js examples; check its terms before redistributing the project (see `web/vendor/README.txt`).
+
+
+### Voice latency (`TTS_MODE`)
+`sentence` (default): each sentence is spoken as soon as it is written, so the voice starts about half a second after the reply
+starts. `full`: the whole reply is sent to Murf at once; it sounds slightly smoother but starts only after the text is finished
+(measured 1.6 to 4.8 seconds later). Set `TTS_MODE=full` in `.env` to go back. The page plays the chunks back to back without gaps.

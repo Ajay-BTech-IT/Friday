@@ -206,6 +206,7 @@ async def draft_reply(email: str, body: str) -> str:
     else:
         note = "Gmail not connected: draft stored locally and cannot be sent until Gmail is connected."
     d = await emails_db.create_draft([to], subject, body, in_reply_to=e["id"], thread_id=e["thread_id"], gmail_draft_id=gmail_id)
+    _arm(d["id"])
     return out({"draft_id": d["id"], "to": to, "subject": subject, "status": d["status"], "note": note,
                 "next": "Waiting for the user's approval in the app (GET /drafts)."})
 
@@ -241,6 +242,7 @@ async def compose_draft(to: str, subject: str, body: str, cc: str | None = None)
     else:
         note = "Gmail not connected: draft stored locally and cannot be sent until Gmail is connected."
     d = await emails_db.create_draft(tos, subject, body, cc_addrs=ccs, gmail_draft_id=gmail_id)
+    _arm(d["id"])
     return out({"draft_id": d["id"], "to": tos, "subject": subject, "status": d["status"], "note": note,
                 "next": "Read it back in one line, naming the recipient's exact email address, then ask: 'Say yes to send it, or tell me what to change.'"})
 
@@ -284,6 +286,7 @@ async def edit_draft(draft: str | None = None, to: str | None = None, cc: str | 
             await gmail.update_draft(row["gmail_draft_id"], row["to_addrs"], row["subject"], row["body"], row["cc_addrs"], row["thread_id"])
         except Exception as ex:
             note = f"Updated here; the Gmail copy will be refreshed when you approve ({ex})"
+    _arm(row["id"])
     return out({"draft_id": row["id"], "to": row["to_addrs"], "cc": row["cc_addrs"], "subject": row["subject"],
                 "status": row["status"], "note": note})
 
@@ -298,6 +301,14 @@ async def reject_draft(draft: str | None = None) -> str:
         return out({"error": "There is no draft waiting for approval."})
     row = await emails_db.set_draft_status(d["id"], "rejected")
     return out({"rejected": row["subject"], "draft_id": row["id"]})
+
+
+def _arm(draft_id) -> None:
+    """The draft is about to be read back with "say yes to send it": arm the confirmation now, so the user's first typed
+    yes is handled by code and sends it (nothing is sent until that yes arrives)."""
+    from orchestrator import router
+
+    router.arm_send(draft_id)
 
 
 @tool

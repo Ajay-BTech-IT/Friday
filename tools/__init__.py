@@ -11,6 +11,7 @@ from tools.profile import get_profile, update_profile
 from tools.reminder import (complete_task, create_routine, create_task, list_routines, list_tasks,
                             snooze_task, update_routine, update_task, upcoming_reminders)
 from tools.scheduler import cancel_event, create_calendar_event, list_events, move_event
+from tools.youtube import close_player, play_youtube, search_youtube
 
 TOOLS = [
     # profile + persona
@@ -30,6 +31,8 @@ TOOLS = [
     sync_mail_now, list_mail, search_mail, read_email, draft_reply, compose_draft, edit_draft, reject_draft, request_send_draft, list_drafts,
     # phone actions (executed by the mobile app)
     call_contact,
+    # YouTube: find links / play on the device the user is on
+    search_youtube, play_youtube, close_player,
     # briefings
     get_briefing,
     # generic database access: select / insert / update (no delete)

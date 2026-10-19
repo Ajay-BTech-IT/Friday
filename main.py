@@ -80,6 +80,19 @@ app.include_router(drafts.router)
 app.include_router(misc.router)
 app.include_router(auth.router)
 
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import mimetypes  # noqa: E402
+
+# Windows can map .js to text/plain, which makes browsers refuse ES modules; pin the types the page needs
+for _ext, _type in ((".js", "text/javascript"), (".mjs", "text/javascript"), (".wasm", "application/wasm"), (".glb", "model/gltf-binary")):
+    mimetypes.add_type(_type, _ext)
+
+_web = Path(__file__).parent / "web"
+if _web.is_dir():  # the face + chat page: http://127.0.0.1:8000/ui/
+    app.mount("/ui", StaticFiles(directory=_web, html=True), name="ui")
+
 
 @app.get("/health", tags=["health"])
 async def health() -> dict:

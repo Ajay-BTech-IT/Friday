@@ -120,7 +120,7 @@ async def compose(data: dict) -> str:
     persona = await persona_db.get_active()
     mem = await memory_db.retrieve("goals habits preferences", 3) if data["kind"] == "evening" else []
     prompt = (
-        f"{persona_db.base_rules()}\n{persona['system_prompt']}\nTone: {persona.get('tone')}. Style: {persona.get('speaking_style')}.\n\n"
+        await persona_db.voice_brief(persona, ((await get_profile()).get("display_name") or "the user").split()[0]) + "\n\n"
         f"Write the {data['kind']} briefing as a spoken message of 60-110 words (about 20 seconds). Priority order: "
         "things the user told you > calendar > emails > routines > coaching. Skip empty sections. If the user told you "
         "nothing special and has no events, say it's a normal day and list the routine items. Include the nutrition "
@@ -128,7 +128,6 @@ async def compose(data: dict) -> str:
         "preview tomorrow. No markdown, no lists, no emojis, do not invent anything not in the data.\n\n"
         f"DATA:\n{json.dumps(jsonable(data), ensure_ascii=False)}\n"
         + ("MEMORIES:\n" + "\n".join(m["content"] for m in mem) if mem else "")
-        + "\n" + await persona_db.language_line()
     )
     res = await chat_model(0.5).ainvoke(prompt)
     return text_of(res.content).strip()

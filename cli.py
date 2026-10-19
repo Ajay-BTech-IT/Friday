@@ -61,11 +61,22 @@ def show(path: str, **params) -> None:
     say(r.text if r.status_code != 200 else json.dumps(r.json(), indent=2, ensure_ascii=False))
 
 
+def _start_video(act: dict) -> None:
+    import pcplayer
+
+    if not (act.get("video_id") and pcplayer.play(act["video_id"], act.get("title"))):
+        import webbrowser  # floating player unavailable: fall back to the browser
+
+        say("  (player window could not start, opened the browser; see pcplayer/player.log)")
+        webbrowser.open(act["url"])
+
+
 def chat(text: str) -> None:
     """Stream one turn: print tokens as they arrive, queue audio chunks as they arrive."""
     player.stop()
     persona = "agent"
     started = False
+    pending_play: dict | None = None
     with client.stream("POST", "/chat/stream", json={"text": text, "voice": player.enabled}) as r:
         if r.status_code != 200:
             r.read()
@@ -85,12 +96,24 @@ def chat(text: str) -> None:
                 say(ev["text"], end="")
             elif t == "audio":
                 player.add(base64.b64decode(ev["data"]))
+            elif t == "action" and ev["action"].get("type") == "play_video":
+                import pcplayer
+
+                pending_play = ev["action"]          # start it after the voice has finished, never on top of it
+            elif t == "action" and ev["action"].get("type") == "close_video":
+                import pcplayer
+
+                pcplayer.stop()
             elif t == "voice_error":
                 say(f"\n  (voice unavailable: {ev['message']})", end="")
             elif t == "done":
                 if not started:
                     say(f"{persona}> {ev.get('reply', '')}", end="")
                 say("")
+                if pending_play:
+                    player.wait_idle()
+                    _start_video(pending_play)
+                    pending_play = None
 
 
 def main() -> None:

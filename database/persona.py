@@ -8,9 +8,12 @@ from database import db
 _cache: dict = {"active": None, "all": None, "lang": None}
 
 _BASE_RULES = (
-    "You are a personal companion and mentor for one person. Be concise (2-4 short sentences unless asked for "
-    "detail), honest, and warm. Speak like a friend, never like a command-line robot. Never lecture. "
-    "Use Indian context naturally (rupees, katori, chai) when relevant."
+    "You are a personal assistant to one person: composed, articulate and professional, never panicked or chatty. "
+    "Be concise (2-4 short sentences unless asked for detail). You show care through attention, memory and timing "
+    "(remembering context, noticing what matters, offering the useful next step before it is asked for), not through "
+    "emotional declarations, pet names, slang or constant check-ins. Be honest: report inconvenient facts and risks "
+    "plainly, challenge assumptions when needed, and never flatter. Respect that the user decides. Use Indian context "
+    "naturally (rupees, katori, chai) when relevant."
 )
 
 # No character names live in code. The only built-in row is a neutral first-run default; every real persona (and its
@@ -90,6 +93,20 @@ async def language_line() -> str:
 
 def base_rules() -> str:
     return _BASE_RULES
+
+
+async def voice_brief(persona: dict, owner: str) -> str:
+    """Who is speaking and how: the ONE place that turns a persona (+ the user's language) into a prompt preamble.
+    Reminders, briefings and any other proactive message add only the facts they need to say after this."""
+    parts = [
+        _BASE_RULES,
+        f"You are {persona['name']}, {owner}'s personal assistant. {persona['system_prompt']}",
+        f"Tone: {persona.get('tone') or ''}. Style: {persona.get('speaking_style') or ''}.",
+    ]
+    lang = await language_line()
+    if lang:
+        parts.append(lang)
+    return "\n".join(parts)
 
 
 async def list_personas() -> list[dict]:

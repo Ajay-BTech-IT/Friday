@@ -46,10 +46,12 @@ def simple_html(line: str, when: str) -> str:
 
 async def build(message: str, persona: dict, fire_at: datetime, owner_name: str, tzname: str,
                 line: str | None = None) -> tuple[str, str, str]:
-    """Returns (subject, plain_text, html). The mail says exactly what the notification says: no persona label,
-    no sign-off, no generated extras."""
+    """Returns (subject, plain_text, html). Subject is the short task title; the body is the notification sentence
+    and the due time. No persona label, no sign-off, no generated extras."""
     clean = message.removeprefix("Reminder: ").strip()
     text = (line or clean).strip()
     when = fire_at.astimezone(tz(tzname)).strftime("%I:%M %p, %A %d %B").lstrip("0")
-    subject = text if len(text) <= 80 else text[:77] + "..."
+    # subject = short task title only; the full sentence lives in the body so the inbox never shows it twice
+    title = clean[:1].upper() + clean[1:]
+    subject = "Reminder: " + (title if len(title) <= 60 else title[:57] + "...")
     return subject, f"{text}\n\n{when}", simple_html(text, when)

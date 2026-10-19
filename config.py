@@ -48,8 +48,9 @@ class Settings:
     overnight_job_time: str = os.getenv("OVERNIGHT_JOB_TIME", "03:30")
     evening_briefing_time: str = os.getenv("EVENING_BRIEFING_TIME", "20:30")
 
+    youtube_api_key: str = os.getenv("YOUTUBE_API_KEY", "")  # optional: else the Google login (youtube.readonly) is used
     murf_api_key: str = os.getenv("MURF_API_KEY", "")
-    tts_mode: str = os.getenv("TTS_MODE", "full").strip().lower()  # full | sentence
+    tts_mode: str = os.getenv("TTS_MODE", "sentence").strip().lower()  # full | sentence
     murf_model: str = os.getenv("MURF_MODEL", "falcon-2")
     # fallback voices for personas that have no voice of their own (chosen by the persona's gender); the real voice
     # of each persona lives in the personas table and is changed by talking to the agent
